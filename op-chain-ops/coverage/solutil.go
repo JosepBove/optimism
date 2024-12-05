@@ -9,6 +9,8 @@ import (
 	"os"
 )
 
+const CONTRACTS_DIR = "../../packages/contracts-bedrock"
+
 type CoverageTracer struct {
 	SourceMapFS      *foundry.SourceMapFS
 	ExecutedSources  map[string]map[int]bool
@@ -19,11 +21,13 @@ type CoverageTracer struct {
 
 func NewCoverageTracer(artifacts []*foundry.Artifact) (*CoverageTracer, error) {
 	tracer := &CoverageTracer{
-		SourceMapFS:      foundry.NewSourceMapFS(os.DirFS("../../packages/contracts-bedrock")),
-		ExecutedSources:  make(map[string]map[int]bool),
-		SourceMaps:       make(map[string]*srcmap.SourceMap),
-		Artifacts:        artifacts,
-		ContractMappings: make(map[string]string),
+		SourceMapFS:        foundry.NewSourceMapFS(os.DirFS(CONTRACTS_DIR)),
+		ExecutedSources:    make(map[string]map[int]bool),
+		ExecutedFunctions:  make(map[string]map[string]bool),
+		FunctionSignatures: make(map[string]map[string]string),
+		SourceMaps:         make(map[string]*srcmap.SourceMap),
+		Artifacts:          artifacts,
+		ContractMappings:   make(map[string]string),
 	}
 
 	// Load source maps during initialization
@@ -112,7 +116,22 @@ func (s *CoverageTracer) GenerateLCOV(outputPath string) error {
 	defer file.Close()
 
 	for filePath, lines := range s.ExecutedSources {
-		fmt.Fprintf(file, "SF:%s\n", filePath)
+		re := regexp.MustCompile(`([^/]+)\.[^/]+$`)
+		match := re.FindStringSubmatch(filePath)
+
+		fmt.Fprintf(file, "SF:%s/%s\n", CONTRACTS_DIR, filePath)
+
+		if functions, ok := s.ExecutedFunctions[match[1]]; ok {
+			for function, executed := range functions {
+				fmt.Fprintf(file, "FN:0,%s\n", function)
+				executionStatus := 0
+				if executed {
+					executionStatus = 1
+				}
+				fmt.Fprintf(file, "FNDA:%d,%s\n", executionStatus, function)
+			}
+		}
+
 		for line, executed := range lines {
 			executionStatus := 0
 			if executed {
